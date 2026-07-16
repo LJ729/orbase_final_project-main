@@ -1,0 +1,74 @@
+services:
+  # Main Laravel + Apache application
+  - type: web
+    name: lanto
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: ./docker/start.sh
+    healthCheckPath: /up
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_URL
+        sync: false
+      - key: APP_KEY
+        sync: false
+      - key: LOG_CHANNEL
+        value: stderr
+      - key: BROADCAST_CONNECTION
+        value: reverb
+      - key: REVERB_APP_ID
+        sync: false
+      - key: REVERB_APP_KEY
+        sync: false
+      - key: REVERB_APP_SECRET
+        sync: false
+      - key: REVERB_HOST
+        fromService:
+          name: lanto-reverb
+          type: web
+          property: host
+      - key: REVERB_PORT
+        value: "443"
+      - key: REVERB_SCHEME
+        value: https
+      - key: DB_CONNECTION
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+
+  # Public WebSocket server (must be a web service, not a background worker)
+  - type: web
+    name: lanto-reverb
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: ./docker/start-reverb.sh
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_KEY
+        sync: false
+      - key: LOG_CHANNEL
+        value: stderr
+      - key: REVERB_APP_ID
+        sync: false
+      - key: REVERB_APP_KEY
+        sync: false
+      - key: REVERB_APP_SECRET
+        sync: false
+      - key: REVERB_SERVER_HOST
+        value: 0.0.0.0
+      # Public hostname clients use (same as this service's host)
+      - key: REVERB_HOST
+        fromService:
+          name: lanto-reverb
+          type: web
+          property: host
+      - key: REVERB_PORT
+        value: "443"
+      - key: REVERB_SCHEME
+        value: https
