@@ -69,7 +69,7 @@ RUN a2enmod rewrite headers \
     && printf 'ServerName localhost\n' > /etc/apache2/conf-available/servername.conf \
     && a2enconf servername
 
-# Pin DocumentRoot to Laravel's public/ (avoid ${APACHE_DOCUMENT_ROOT} expansion issues)
+# Pin DocumentRoot to Laravel's public/
 COPY docker/000-default.conf /etc/apache2/sites-available/000-default.conf
 
 RUN sed -ri -e 's!AllowOverride None!AllowOverride All!g' \
@@ -93,10 +93,8 @@ RUN composer install \
 # Copy Laravel source
 COPY . .
 
-# Remove any stale local Vite build
+# Remove any stale local Vite build and copy the production bundle
 RUN rm -rf /var/www/html/public/build
-
-# Copy one complete Vite build from the frontend stage
 COPY --from=frontend /app/public/build /var/www/html/public/build
 
 # Verify manifest and matching asset files
@@ -104,7 +102,7 @@ RUN test -f /var/www/html/public/build/manifest.json \
     && echo "Vite files in final image:" \
     && find /var/www/html/public/build -maxdepth 2 -type f -print
 
-# Rebuild autoloader after full source copy (install used --no-scripts)
+# Rebuild autoloader and set up storage directories with permissions
 RUN composer dump-autoload --optimize --no-scripts \
     && mkdir -p \
         storage/logs \
@@ -118,4 +116,5 @@ RUN composer dump-autoload --optimize --no-scripts \
 
 EXPOSE 80
 
+# This MUST be the last line of the Dockerfile
 CMD ["./docker/start.sh"]
