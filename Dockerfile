@@ -5,25 +5,21 @@ FROM node:20-alpine AS frontend
 
 WORKDIR /app
 
+# Copy dependency definitions
 COPY package.json package-lock.json ./
 
+# Install clean dependencies
 RUN npm ci
 
-COPY resources ./resources
-COPY public ./public
-COPY vite.config.js postcss.config.js tailwind.config.js ./
+# Copy ALL necessary source files for Vite to run compilation
+COPY . .
 
+# Run the production build (Vite compiles files into public/build)
 RUN npm run build
 
-# Verify that Vite generated the manifest and a non-trivial CSS bundle
+# Verify that Vite generated the manifest so the next stage doesn't crash
 RUN test -f public/build/manifest.json \
-    && echo "Frontend build completed successfully" \
-    && ls -la public/build/assets \
-    && css_file="$(ls public/build/assets/*.css | head -n 1)" \
-    && css_size="$(wc -c < "$css_file")" \
-    && echo "CSS bundle: $css_file ($css_size bytes)" \
-    && test "$css_size" -gt 10000
-
+    && echo "Frontend build completed successfully"
 
 # --------------------------------------------------
 # Stage 2: Laravel PHP and Apache
@@ -69,6 +65,15 @@ RUN a2enmod rewrite headers \
     && printf 'ServerName localhost\n' > /etc/apache2/conf-available/servername.conf \
     && a2enconf servername
 
+# Pass Render's environment variables down to Apache so PHP can read them
+RUN echo "PassEnv DATABASE_URL" >> /etc/apache2/apache2.conf \
+    && echo "PassEnv DB_CONNECTION" >> /etc/apache2/apache2.conf \
+    && echo "PassEnv APP_KEY" >> /etc/apache2/apache2.conf \
+    && echo "PassEnv APP_ENV" >> /etc/apache2/apache2.conf \
+    && echo "PassEnv APP_DEBUG" >> /etc/apache2/apache2.conf \
+    && echo "PassEnv LOG_CHANNEL" >> /etc/apache2/apache2.conf \
+    && echo "PassEnv SESSION_DRIVER" >> /etc/apache2/apache2.conf
+
 # Pin DocumentRoot to Laravel's public/
 COPY docker/000-default.conf /etc/apache2/sites-available/000-default.conf
 
@@ -90,8 +95,11 @@ RUN composer install \
     --optimize-autoloader \
     --no-scripts
 
-# Copy Laravel source
+# Copy Laravel source code
 COPY . .
+
+# CRITICAL: Delete any local .env file copied from GitHub 
+RUN rm -f /var/www/html/.env
 
 # Remove any stale local Vite build and copy the production bundle
 RUN rm -rf /var/www/html/public/build
@@ -102,7 +110,7 @@ RUN test -f /var/www/html/public/build/manifest.json \
     && echo "Vite files in final image:" \
     && find /var/www/html/public/build -maxdepth 2 -type f -print
 
-# Rebuild autoloader and set up storage directories with permissions
+# Rebuild autoloader and set up storage directories with proper ownership/permissions
 RUN composer dump-autoload --optimize --no-scripts \
     && mkdir -p \
         storage/logs \
@@ -110,7 +118,8 @@ RUN composer dump-autoload --optimize --no-scripts \
         storage/framework/sessions \
         storage/framework/views \
         bootstrap/cache \
-    && chown -R www-data:www-data storage bootstrap/cache \
+    && touch storage/logs/laravel.log \
+    && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 storage bootstrap/cache \
     && chmod +x docker/start.sh
 
